@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stream-upload-file
+spec:
+  ingressClassName: azure/application-gateway
+  rules:
+  - host: fileupload.127.0.0.1.nip.io  # Replace with your actual domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: stream-upload-file
+            port:
+              number: 8080

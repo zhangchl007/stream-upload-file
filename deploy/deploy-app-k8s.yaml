@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stream-upload-file
+  labels:
+    azure.workload.identity/use: "true"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: stream-upload-file
+  template:
+    metadata:
+      labels:
+        app: stream-upload-file
+        azure.workload.identity/use: "true"  # Add this label
+    spec:
+      serviceAccountName: workload-identity-sa
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: stream-upload-file
+          image: quay.io/zhangchl007/stream-upload-file:v2
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          env:
+            - name: STORAGE_ACCOUNT_NAME
+              value: "k8admsa"
+            - name: STORAGE_CONTAINER_NAME
+              value: "uploads"
+            - name: AZURE_TENANT_ID
+              value: "72f988bf-86f1-41af-91ab-2d7cd011db47"  # Replace with your Azure tenant ID
+            - name: AZURE_CLIENT_ID
+              value: "1e469f6b-efed-49fb-a321-4d426a06c6a9"  # Replace with your Azure client ID
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 50"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stream-upload-file
+spec:
+  type: ClusterIP
+  selector:
+    app: stream-upload-file
+  ports:
+    - port: 8080
+      targetPort: 8080
