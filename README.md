@@ -1,6 +1,6 @@
 # Stream Upload File Service
 
-A production-ready Go service for streaming file uploads and downloads to Azure Blob Storage, with Kubernetes deployment support and Python-based load testing utilities.
+A robust Go service for streaming file uploads and downloads to Azure Blob Storage, designed for cloud-native environments with Kubernetes deployment and Python-based load testing utilities.
 
 ---
 
@@ -23,24 +23,26 @@ A production-ready Go service for streaming file uploads and downloads to Azure 
 ├── go.mod
 ├── go.sum
 ├── main.go
+├── README.md
 ├── pkg/
 │   ├── filehandler/
 │   │   ├── Filehandler.go
 │   │   ├── download.go
-│   │   └── upload.go
+│   │   ├── download_test.go
+│   │   ├── upload.go
+│   │   ├── upload_test.go
+│   │   └── Filehander_test.go
 │   └── storage/
-│       └── azureblob.go
+│       ├── azureblob.go
+│       └── azureblob_test.go
 └── deploy/
     ├── appgateway-ingress.yaml
     ├── deploy-app.yaml
+    ├── deploy-app-k8s.yaml
     ├── ingress-deploy.yaml
     ├── one-uploadfile.py
-    ├── README.md
-    ├── test1.zip
-    ├── test2.zip
-    ├── test3.zip
-    ├── test4.zip
-    └── uploadfile.py
+    ├── uploadfile.py
+    └── README.md
 ```
 
 ---
@@ -63,7 +65,7 @@ docker push <your-repo>/stream-upload-file:latest
 
 ### 3. Deploy to Kubernetes
 
-- Edit `deploy/deploy-app.yaml` to set your storage account/container and image.
+- Edit `deploy/deploy-app.yaml` or `deploy/deploy-app-k8s.yaml` to set your storage account/container and image.
 - Deploy:
 
 ```sh
@@ -116,6 +118,7 @@ python deploy/uploadfile.py --url http://localhost:8080/upload --files deploy/te
 - The deployment uses a `ServiceAccount` for Azure Workload Identity.
 - Ingress manifests are provided for both NGINX and Azure Application Gateway.
 - Health and readiness probes are configured for robust rolling updates.
+- Resource requests and limits are set for production readiness.
 
 ---
 

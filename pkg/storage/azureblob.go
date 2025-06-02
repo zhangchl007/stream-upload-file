@@ -114,7 +114,11 @@ func NewAzureBlobClient() (*AzureBlobClient, error) {
 	// Fall back to default credential if workload identity failed
 	if cred == nil {
 		logger.Info("Falling back to default Azure credential")
-		cred, err = azidentity.NewDefaultAzureCredential(nil)
+		//cred, err = azidentity.NewDefaultAzureCredential(nil)
+		logger.Info("clientID", zap.String("clientID", clientID))
+		cred, err = azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
+			ID: azidentity.ClientID(clientID),
+		})
 		if err != nil {
 			logger.Error("Failed to create default Azure credential", zap.Error(err))
 			return nil, err
@@ -126,8 +130,8 @@ func NewAzureBlobClient() (*AzureBlobClient, error) {
 		ClientOptions: policy.ClientOptions{
 			Retry: policy.RetryOptions{
 				MaxRetries:    3,
-				RetryDelay:    4 * time.Second,
-				MaxRetryDelay: 60 * time.Second,
+				RetryDelay:    1 * time.Second,
+				MaxRetryDelay: 30 * time.Second,
 			},
 		},
 	}
