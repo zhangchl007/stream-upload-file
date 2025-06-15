@@ -1,0 +1,67 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway-01
+  namespace: test-infra
+  annotations:
+    alb.networking.azure.io/alb-id: "/subscriptions/your-subscription-id/resourceGroups/your-resource-group/providers/Microsoft.Network/applicationGateways/your-alb-name"
+  gatewayClassName: azure-alb-external
+  listeners:
+  - name: http-listener
+    protocol: HTTP
+    hostname: "streamfiles.cloudapp008.com"
+    port: 80
+    allowedRoutes:
+        namespaces:
+          from: All
+  - name: https-listener
+    port: 443
+    protocol: HTTPS
+    hostname: "streamfiles.cloudapp008.com"
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: letsencrypt-cert
+    allowedRoutes:
+      namespaces:
+        from: All
+  addresses:
+  - type: alb.networking.azure.io/alb-frontend
+    value: k8s-frontend
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-stream-upload-file
+spec:
+  parentRefs:
+  - name: gateway-01
+    namespace: test-infra
+  hostnames:
+  - "streamfiles.cloudapp008.com"
+  rules:
+  - backendRefs:
+    - name: stream-upload-file
+      port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: route-stream-upload-file
+spec:
+  parentRefs:
+  - name: gateway-01
+    namespace: test-infra
+    sectionName: https-listener
+  hostnames:
+  - upstreamfiles.cloudapp008.com
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: stream-upload-file
+      port: 8080

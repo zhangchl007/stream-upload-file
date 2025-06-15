@@ -1,0 +1,17 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: letsencrypt-cert
+  namespace: test-infra
+spec:
+  secretName: letsencrypt-cert
+  dnsNames:
+    - streamfiles.cloudapp008.com
+  issuerRef:
+    name: letsencrypt-prod-agc
+    kind: ClusterIssuer
+    group: cert-manager.io
+  usages:
+    - digital signature
+    - key encipherment

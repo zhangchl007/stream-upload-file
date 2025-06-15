@@ -2,10 +2,17 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: stream-upload-file
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod1
+    appgw.ingress.kubernetes.io/backend-drain: "true"
 spec:
-  ingressClassName: azure/application-gateway
+  ingressClassName: azure-application-gateway
+  tls:
+  - hosts:
+      - upstreamfiles.cloudapp008.com
+    secretName: upstream-tls
   rules:
-  - host: fileupload.127.0.0.1.nip.io  # Replace with your actual domain
+  - host: upstreamfiles.cloudapp008.com
     http:
       paths:
       - path: /

@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "9"
+  labels:
+    azure.workload.identity/use: "true"
+  name: stream-upload-file
+  namespace: default
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 4
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: stream-upload-file
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/restartedAt: "2025-06-12T23:33:46+08:00"
+      labels:
+        app: stream-upload-file
+        azure.workload.identity/use: "true"
+    spec:
+      containers:
+      - env:
+        - name: STORAGE_ACCOUNT_NAME
+          value: k8admsa
+        - name: STORAGE_CONTAINER_NAME
+          value: uploads
+        - name: AZURE_TENANT_ID
+          value: 72f988bf-86f1-41af-91ab-2d7cd011db47
+        - name: AZURE_CLIENT_ID
+          value: 1e469f6b-efed-49fb-a321-4d426a06c6a9
+        image: sitcleaninstall.azurecr.io/zhangchl007/stream-upload-file:mi-v1
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 50
+        livenessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 2
+        name: stream-upload-file
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /readyz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 2
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 2Gi
+          requests:
+            cpu: 500m
+            memory: 512Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: workload-identity-sa
+      serviceAccountName: workload-identity-sa
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stream-upload-file
+  namespace: default
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: stream-upload-file
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    appgw.ingress.kubernetes.io/connection-draining: "true"
+    appgw.ingress.kubernetes.io/connection-draining-timeout: "30"
+    appgw.ingress.kubernetes.io/request-timeout: "30"
+    cert-manager.io/cluster-issuer: letsencrypt-prod1
+  name: stream-upload-file
+  namespace: default
+spec:
+  ingressClassName: azure-application-gateway
+  rules:
+  - host: upstreamfiles.cloudapp008.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: stream-upload-file
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - upstreamfiles.cloudapp008.com
+    secretName: upstream-tls
