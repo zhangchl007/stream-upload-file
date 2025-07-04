@@ -1,14 +1,15 @@
 module stream-upload-file
 
-go 1.23.0
+go 1.24
 
-toolchain go1.23.9
+toolchain go1.24.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.1
 	github.com/gin-gonic/gin v1.10.1
+	github.com/pires/go-proxyproto v0.8.1
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 )

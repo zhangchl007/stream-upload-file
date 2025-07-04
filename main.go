@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pires/go-proxyproto"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -67,10 +69,19 @@ func main() {
 		Handler: r,
 	}
 
+	// --- PROXY protocol support ---
+	ln, err := net.Listen("tcp", srv.Addr)
+	if err != nil {
+		logger.Fatal("Failed to listen", zap.Error(err))
+	}
+	proxyListener := &proxyproto.Listener{Listener: ln}
+	defer proxyListener.Close()
+	// --- end PROXY protocol support ---
+
 	// Start server in a goroutine
 	go func() {
-		logger.Info("Starting server on :8080")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Info("Starting server on :8080 with PROXY protocol support")
+		if err := srv.Serve(proxyListener); err != nil && err != http.ErrServerClosed {
 			logger.Fatal("Server failed to start", zap.Error(err))
 		}
 	}()
