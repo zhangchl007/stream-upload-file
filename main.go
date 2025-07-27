@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"stream-upload-file/pkg/filehandler"
 	"stream-upload-file/pkg/storage"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -16,6 +17,16 @@ import (
 	"github.com/pires/go-proxyproto"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+const (
+	healthzPath = "/healthz"
+	readyzPath  = "/readyz"
+	versionPath = "/version"
+)
+
+var (
+	ready int32 // 0 = not ready, 1 = ready
 )
 
 func main() {
@@ -38,35 +49,55 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(GinZapMiddleware(logger))
 
-	// Add health check endpoint for Kubernetes probes
-	r.GET("/healthz", func(c *gin.Context) {
-		c.Status(200)
+	// Liveness probe: always returns 200 if process is running
+	r.GET(healthzPath, func(c *gin.Context) {
+		c.Status(http.StatusOK)
 	})
 
-	// Add readiness probe endpoint for Kubernetes
-	r.GET("/readyz", func(c *gin.Context) {
-		c.Status(200)
+	// Readiness probe: returns 200 only if ready to serve traffic
+	r.GET(readyzPath, func(c *gin.Context) {
+		if atomic.LoadInt32(&ready) == 1 {
+			c.Status(http.StatusOK)
+		} else {
+			c.Status(http.StatusServiceUnavailable)
+		}
 	})
 
-	// create new storage client
+	// Version endpoint for debugging
+	r.GET(versionPath, func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"version": "v1.0.0",
+			"commit":  "unknown",
+		})
+	})
+
+	// Create storage client
 	storageClient, err := storage.NewAzureBlobClient()
 	if err != nil {
 		logger.Fatal("Failed to create Azure storage client", zap.Error(err))
 	}
+
 	// Create file handler with storage client
 	fileHandler := filehandler.NewAzureFileHandler(storageClient)
-	// Check if the file handler was created successfully
 	if fileHandler == nil {
 		logger.Fatal("Failed to create file handler")
 	}
+
+	// Mark as ready after successful initialization
+	atomic.StoreInt32(&ready, 1)
+	logger.Info("Application initialized and ready to serve traffic")
+
 	// Set up routes
 	r.POST("/upload", fileHandler.UploadHandler(""))
 	r.GET("/download/:filename", fileHandler.DownloadHandler(""))
 
 	// Set up HTTP server with graceful shutdown
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: r,
+		Addr:         ":8080",
+		Handler:      r,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	// --- PROXY protocol support ---
@@ -88,20 +119,29 @@ func main() {
 
 	// Wait for interrupt signal to gracefully shut down the server
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	logger.Info("Shutdown signal received, starting graceful shutdown...")
 
-	// Create context with timeout for shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Mark as not ready to stop receiving new traffic
+	atomic.StoreInt32(&ready, 0)
+
+	// Give load balancer time to detect we're not ready
+	logger.Info("Waiting for load balancer to detect readiness change...")
+	time.Sleep(15 * time.Second)
+
+	// Create context with timeout for shutdown (should be less than terminationGracePeriodSeconds)
+	shutdownTimeout := 30 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
+	logger.Info("Shutting down server...", zap.Duration("timeout", shutdownTimeout))
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Fatal("Server forced to shutdown", zap.Error(err))
+		logger.Error("Server forced to shutdown", zap.Error(err))
+	} else {
+		logger.Info("Server shutdown completed gracefully")
 	}
-
-	logger.Info("Server exited gracefully")
 }
 
 // GinZapMiddleware returns a gin middleware that logs requests using zap

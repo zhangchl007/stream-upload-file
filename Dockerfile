@@ -14,8 +14,9 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o stream-upload-file main.go
 
 # Use a minimal image for running
-FROM gcr.io/distroless/base-debian12
-
+# FROM gcr.io/distroless/base-debian12
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 COPY --from=builder /app/stream-upload-file .
