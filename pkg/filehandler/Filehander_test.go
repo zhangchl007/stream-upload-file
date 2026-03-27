@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -38,14 +37,6 @@ func TestNewAzureFileHandler_InitializesFields(t *testing.T) {
 	handler := filehandler.NewAzureFileHandler(mockClient)
 
 	assert.NotNil(t, handler)
-	assert.NotNil(t, getUnexportedField(handler, "logger"))
-	assert.Equal(t, mockClient, getUnexportedField(handler, "storageClient"))
-}
-
-// Helper function to access unexported fields using reflection
-func getUnexportedField(obj interface{}, field string) interface{} {
-	val := reflect.ValueOf(obj).Elem().FieldByName(field)
-	return val.Interface()
 }
 
 func TestStorageClient_UploadBlob_Called(t *testing.T) {

@@ -16,15 +16,19 @@ import (
 )
 
 type AzureBlobClient struct {
-	client     *azblob.Client
+	client     BlobClient
 	accountURL string
 	container  string
 	logger     *zap.Logger
 }
 
 // For testing
-var NewDefaultAzureCredentialFunc = azidentity.NewDefaultAzureCredential
-var NewWorkloadIdentityCredentialFunc = azidentity.NewWorkloadIdentityCredential
+var NewDefaultAzureCredentialFunc = func(opts *azidentity.DefaultAzureCredentialOptions) (*azidentity.DefaultAzureCredential, error) {
+	return azidentity.NewDefaultAzureCredential(opts)
+}
+var NewWorkloadIdentityCredentialFunc = func(opts *azidentity.WorkloadIdentityCredentialOptions) (*azidentity.WorkloadIdentityCredential, error) {
+	return azidentity.NewWorkloadIdentityCredential(opts)
+}
 
 type BlobClientOptions struct {
 	*azblob.ClientOptions
@@ -99,7 +103,7 @@ func NewAzureBlobClient() (*AzureBlobClient, error) {
 	// Try workload identity first
 	if clientID != "" && tenantID != "" && tokenFilePath != "" {
 		logger.Info("Using workload identity authentication")
-		cred, err = azidentity.NewWorkloadIdentityCredential(&azidentity.WorkloadIdentityCredentialOptions{
+		cred, err = NewWorkloadIdentityCredentialFunc(&azidentity.WorkloadIdentityCredentialOptions{
 			ClientID:      clientID,
 			TenantID:      tenantID,
 			TokenFilePath: tokenFilePath,
@@ -114,11 +118,8 @@ func NewAzureBlobClient() (*AzureBlobClient, error) {
 	// Fall back to default credential if workload identity failed
 	if cred == nil {
 		logger.Info("Falling back to default Azure credential")
-		//cred, err = azidentity.NewDefaultAzureCredential(nil)
-		logger.Info("clientID", zap.String("clientID", clientID))
-		cred, err = azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
-			ID: azidentity.ClientID(clientID),
-		})
+		logger.Info("Using managed identity with client ID", zap.String("clientID", clientID))
+		cred, err = NewDefaultAzureCredentialFunc(nil)
 		if err != nil {
 			logger.Error("Failed to create default Azure credential", zap.Error(err))
 			return nil, err
@@ -126,37 +127,22 @@ func NewAzureBlobClient() (*AzureBlobClient, error) {
 	}
 
 	// Create the blob client with retry options
-	clientOptions := &azblob.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Retry: policy.RetryOptions{
-				MaxRetries:    3,
-				RetryDelay:    1 * time.Second,
-				MaxRetryDelay: 30 * time.Second,
+	blobClientOptions := &BlobClientOptions{
+		ClientOptions: &azblob.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Retry: policy.RetryOptions{
+					MaxRetries:    3,
+					RetryDelay:    1 * time.Second,
+					MaxRetryDelay: 30 * time.Second,
+				},
 			},
 		},
 	}
 
-	client, err := azblob.NewClient(accountURL, cred, clientOptions)
+	client, err := NewBlobClientFunc(accountURL, cred, blobClientOptions)
 	if err != nil {
 		logger.Error("Failed to create Azure Blob client", zap.Error(err))
 		return nil, err
-	}
-
-	// Verify container exists by listing blobs (limited to 1)
-	containerClient := client.ServiceClient().NewContainerClient(containerName)
-	maxResults := int32(1)
-	pager := containerClient.NewListBlobsFlatPager(&azblob.ListBlobsFlatOptions{
-		MaxResults: &maxResults,
-	})
-
-	ctx := context.Background()
-	if _, err := pager.NextPage(ctx); err != nil {
-		logger.Warn("Container may not exist or access denied",
-			zap.String("container", containerName),
-			zap.Error(err))
-
-		// Try to create the container (ignoring any errors if it already exists)
-		_, _ = containerClient.Create(ctx, nil)
 	}
 
 	logger.Info("Successfully connected to Azure Blob Storage",
