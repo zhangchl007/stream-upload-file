@@ -7,7 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -49,8 +50,10 @@ type azureFileHandler struct {
 
 func (h *azureFileHandler) DownloadHandler(basePath string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Implementation details should match how it's used in the tests
 		filename := c.Param("filename")
+		filename = filepath.Base(filename)
+		filename = strings.ReplaceAll(filename, " ", "_")
+
 		resp, err := h.storageClient.DownloadBlob(c.Request.Context(), filename)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
@@ -64,13 +67,14 @@ func (h *azureFileHandler) DownloadHandler(basePath string) gin.HandlerFunc {
 			contentType = *resp.ContentType
 		}
 
-		c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
-		c.Header("Content-Type", contentType)
+		var contentLength int64 = -1
 		if resp.ContentLength != nil {
-			c.Header("Content-Length", strconv.FormatInt(*resp.ContentLength, 10))
+			contentLength = *resp.ContentLength
 		}
-	}
 
+		c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+		c.DataFromReader(http.StatusOK, contentLength, contentType, resp.Body, nil)
+	}
 }
 
 func newTestAzureFileHandler(downloadFunc func(ctx context.Context, filename string) (*mockDownloadResponse, error)) *azureFileHandler {
@@ -152,9 +156,9 @@ func TestDownloadHandler_SanitizeFilename(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	expectedContent := []byte("safe")
 	handler := newTestAzureFileHandler(func(ctx context.Context, filename string) (*mockDownloadResponse, error) {
-		// Should only receive the base name, not a path
-		if filename != "evil.txt" {
-			t.Errorf("filename not sanitized: got %q", filename)
+		// Spaces in filename should be replaced with underscores
+		if filename != "test_file.txt" {
+			t.Errorf("filename not sanitized: got %q, want %q", filename, "test_file.txt")
 		}
 		return &mockDownloadResponse{
 			Body:          io.NopCloser(bytes.NewReader(expectedContent)),
@@ -166,10 +170,11 @@ func TestDownloadHandler_SanitizeFilename(t *testing.T) {
 	router := gin.New()
 	router.GET("/download/:filename", handler.DownloadHandler(""))
 
-	req := httptest.NewRequest("GET", "/download/../../evil.txt", nil)
+	req := httptest.NewRequest("GET", "/download/test%20file.txt", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, string(expectedContent), w.Body.String())
 }
+

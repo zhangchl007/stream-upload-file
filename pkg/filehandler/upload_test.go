@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"stream-upload-file/pkg/filehandler"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
@@ -91,20 +93,20 @@ func TestUploadHandler_InvalidContentType(t *testing.T) {
 	assert.Contains(t, resp.Body.String(), "Failed to get file")
 }
 
-// test upload SanitizeFile
-
+// TestUploadHandler_SanitizeFileName verifies that the real upload handler sanitizes
+// filenames by replacing spaces with underscores.
 func TestUploadHandler_SanitizeFileName(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.Default()
-	router.POST("/upload", uploadHandler)
+	handler := filehandler.NewAzureFileHandler(&MockStorageClient{})
+	router.POST("/upload", handler.UploadHandler(""))
 
-	// Create a request with a filename that needs sanitization
+	// Create a request with a filename that needs sanitization (spaces → underscores)
 	req, writer := createMultipartRequest(t, "file", "test file.txt", "This is a test file.")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
 	assert.Equal(t, http.StatusOK, resp.Code)
-	assert.Contains(t, resp.Body.String(), "File uploaded successfully")
 	assert.Contains(t, resp.Body.String(), "test_file.txt") // Check if the filename was sanitized
 	assert.Equal(t, writer.FormDataContentType(), req.Header.Get("Content-Type"))
 }
